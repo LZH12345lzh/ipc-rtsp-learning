@@ -1,0 +1,20 @@
+# RTSP Client Demo (Qt)
+
+## Overview
+Learning project for RTSP → RTP → H265 → IPC pipeline.
+
+## Phase 1
+- RTSP OPTIONS
+- RTSP DESCRIBE
+- SDP parsing
+- MediaSession
+
+## Environment
+- Qt 5.12.8
+- WSL Ubuntu
+- MediaMTX (Windows)
+
+## Next
+- SETUP
+- RTP receive
+- H265 parser

@@ -1,0 +1,17 @@
+# build
+build/
+
+# Qt
+*.pro.user
+*.autosave
+
+# binary
+RtspClientDemo
+*.o
+*.obj
+
+# vscode
+.vscode/
+
+# logs
+*.log
