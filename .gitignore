@@ -1,5 +1,5 @@
 # build
-build/
+/build/
 
 # Qt
 *.pro.user
