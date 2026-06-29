@@ -2,9 +2,6 @@
 #include <QDebug>
 
 #include "RtspClient.h"
-#include "RtspRequest.h"
-#include "RtspResponse.h"
-#include "SDPParser.h"
 
 int main(int argc, char *argv[])
 {
@@ -14,16 +11,22 @@ int main(int argc, char *argv[])
 
     QString url = "rtsp://172.25.32.1:8554/live";
 
-    client.start(url);
-
-    QObject::connect(&client, &RtspClient::sdpParsed,
-        [](const MediaSession &session)
+    // ================= RTSP Ready（主事件） =================
+    QObject::connect(&client, &RtspClient::rtspReady,
+        []( )
     {
-        qDebug() << "==== SDP READY ====";
-        qDebug() << "Track count:" << session.tracks.size();
-        qDebug() << "Codec:" << session.tracks[0].codec;
-        qDebug() << "Payload:" << session.tracks[0].payloadType;
+        qDebug() << "==== RTSP READY ====";
+        qDebug() << "Control plane finished (OPTIONS/DESCRIBE/SETUP)";
     });
+
+    // ================= 错误 =================
+    QObject::connect(&client, &RtspClient::errorOccurred,
+        [](const QString &err)
+    {
+        qDebug() << "ERROR:" << err;
+    });
+
+    client.start(url);
 
     return a.exec();
 }

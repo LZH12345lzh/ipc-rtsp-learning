@@ -22,7 +22,7 @@ RtspClient::RtspClient(QObject *parent)
             &RtspClient::onError);
 }
 
-// ===================== 启动连接 =====================
+// ===================== 启动 =====================
 void RtspClient::start(const QString &u)
 {
     url = u;
@@ -45,23 +45,14 @@ void RtspClient::onConnected()
 
     state = State::Connected;
 
-    // ---------- OPTIONS ----------
-    RtspRequest req;
-    req.setMethod(RtspRequest::OPTIONS);
-    req.setUrl(url);
-    req.setCSeq(cseq++);
-
-    sendRequest(req);
-
-    state = State::OptionsSent;
+    sendOptions();
 }
 
-// ===================== 收到数据 =====================
+// ===================== 收包 =====================
 void RtspClient::onReadyRead()
 {
     buffer += socket->readAll();
 
-    // RTSP 响应结束标志
     if (!buffer.contains("\r\n\r\n"))
         return;
 
@@ -88,54 +79,140 @@ void RtspClient::sendRequest(const RtspRequest &req)
     socket->write(data);
 }
 
-// ===================== 响应处理（状态机核心） =====================
+// ===================== OPTIONS =====================
+void RtspClient::sendOptions()
+{
+    RtspRequest req;
+    req.setMethod(RtspRequest::OPTIONS);
+    req.setUrl(url);
+    req.setCSeq(cseq++);
+
+    sendRequest(req);
+
+    state = State::OptionsSent;
+}
+
+// ===================== DESCRIBE =====================
+void RtspClient::sendDescribe()
+{
+    RtspRequest req;
+    req.setMethod(RtspRequest::DESCRIBE);
+    req.setUrl(url);
+    req.setCSeq(cseq++);
+
+    sendRequest(req);
+
+    state = State::DescribeSent;
+}
+
+// ===================== SETUP =====================
+void RtspClient::sendSetup(MediaTrack *track)
+{
+    QString setupUrl = url;
+
+    if (!setupUrl.endsWith('/'))
+        setupUrl += '/';
+
+    setupUrl += track->control;
+
+    RtspRequest req;
+    req.setMethod(RtspRequest::SETUP);
+    req.setUrl(setupUrl);
+    req.setCSeq(cseq++);
+
+    req.setClientPorts(track->clientRtpPort,
+                        track->clientRtcpPort);
+
+    qDebug() << ">>> SETUP:" << setupUrl;
+
+    sendRequest(req);
+
+    state = State::SetupSent;
+}
+
+// ===================== Response分发 =====================
 void RtspClient::handleResponse(const RtspResponse &resp)
 {
-    qDebug() << "<<< RTSP Response:"
-             << resp.statusCode();
-
-    // ================= OPTIONS 返回 =================
-    if (state == State::OptionsSent)
+    switch (state)
     {
-        if (resp.statusCode() != 200)
-        {
-            emit errorOccurred("OPTIONS failed");
-            state = State::Error;
-            return;
-        }
+    case State::OptionsSent:
+        onOptionsResponse(resp);
+        break;
 
-        // ---------- DESCRIBE ----------
-        RtspRequest req;
-        req.setMethod(RtspRequest::DESCRIBE);
-        req.setUrl(url);
-        req.setCSeq(cseq++);
+    case State::DescribeSent:
+        onDescribeResponse(resp);
+        break;
 
-        sendRequest(req);
+    case State::SetupSent:
+        onSetupResponse(resp);
+        break;
 
-        state = State::DescribeSent;
+    default:
+        break;
+    }
+}
+
+// ===================== OPTIONS response =====================
+void RtspClient::onOptionsResponse(const RtspResponse &resp)
+{
+    qDebug() << "<<< OPTIONS Response:" << resp.statusCode();
+
+    if (resp.statusCode() != 200)
+    {
+        emit errorOccurred("OPTIONS failed");
+        state = State::Error;
         return;
     }
 
-    // ================= DESCRIBE 返回（SDP） =================
-    if (state == State::DescribeSent)
+    sendDescribe();
+}
+
+// ===================== DESCRIBE response =====================
+void RtspClient::onDescribeResponse(const RtspResponse &resp)
+{
+    qDebug() << "<<< DESCRIBE Response:" << resp.statusCode();
+
+    if (resp.statusCode() != 200)
     {
-        if (resp.statusCode() != 200)
-        {
-            emit errorOccurred("DESCRIBE failed");
-            state = State::Error;
-            return;
-        }
-
-        qDebug().noquote() << "<<< SDP:\n" << resp.body();
-
-        MediaSession session = SDPParser::parse(resp.body());
-
-        state = State::Ready;
-
-        emit sdpParsed(session);
-
+        emit errorOccurred("DESCRIBE failed");
+        state = State::Error;
         return;
     }
+
+    qDebug().noquote() << "<<< SDP:\n" << resp.body();
+
+    // 解析 SDP
+    mediaSession = SDPParser::parse(resp.body());
+
+    MediaTrack *track = mediaSession.firstTrack("video");
+    if (!track)
+    {
+        emit errorOccurred("No video track");
+        state = State::Error;
+        return;
+    }
+
+    sendSetup(track);
+}
+
+// ===================== SETUP response =====================
+void RtspClient::onSetupResponse(const RtspResponse &resp)
+{
+    qDebug() << "<<< SETUP Response:" << resp.statusCode();
+
+    if (resp.statusCode() != 200)
+    {
+        emit errorOccurred("SETUP failed");
+        state = State::Error;
+        return;
+    }
+
+    qDebug() << "<<< SETUP OK";
+
+    state = State::Ready;
+    emit rtspReady();
+
+    qDebug() << "RTSP Ready (control plane finished)";
 }
 
 // ===================== 错误处理 =====================

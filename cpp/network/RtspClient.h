@@ -2,6 +2,9 @@
 
 #include <QObject>
 #include <QTcpSocket>
+#include <QString>
+#include <QByteArray>
+
 #include "RtspRequest.h"
 #include "RtspResponse.h"
 #include "MediaSession.h"
@@ -16,8 +19,8 @@ public:
     void start(const QString &url);
 
 signals:
-    void errorOccurred(QString err);
-    void sdpParsed(MediaSession session);
+    void rtspReady();
+    void errorOccurred(const QString &err);
 
 private slots:
     void onConnected();
@@ -25,26 +28,42 @@ private slots:
     void onError(QAbstractSocket::SocketError);
 
 private:
-    void sendRequest(const RtspRequest &req);
-    void handleResponse(const RtspResponse &resp);
-
-private:
-    QTcpSocket *socket;
-
-    QString url;
-    QByteArray buffer;
-
-    int cseq = 1;
-
-    enum class State {
-        Idle,
+    enum State
+    {
         Connecting,
         Connected,
         OptionsSent,
         DescribeSent,
+        SetupSent,
         Ready,
         Error
     };
 
-    State state = State::Idle;
+private:
+    // ===== 网络 =====
+    QTcpSocket *socket = nullptr;
+    QString url;
+    QByteArray buffer;
+
+    // ===== 状态机 =====
+    State state = Connecting;
+    int cseq = 1;
+
+    // ===== 媒体会话 =====
+    MediaSession mediaSession;
+
+private:
+    // ===== 请求发送 =====
+    void sendRequest(const RtspRequest &req);
+
+    void sendOptions();
+    void sendDescribe();
+    void sendSetup(MediaTrack *track);
+
+    // ===== 响应处理 =====
+    void handleResponse(const RtspResponse &resp);
+
+    void onOptionsResponse(const RtspResponse &resp);
+    void onDescribeResponse(const RtspResponse &resp);
+    void onSetupResponse(const RtspResponse &resp);
 };
