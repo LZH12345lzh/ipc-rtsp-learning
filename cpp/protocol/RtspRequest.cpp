@@ -1,4 +1,5 @@
 #include "RtspRequest.h"
+#include <QDebug>
 
 void RtspRequest::setMethod(Method m) { method = m; }
 void RtspRequest::setUrl(const QString &u) { url = u; }
@@ -31,8 +32,6 @@ QByteArray RtspRequest::toByteArray() const
     QString req;
 
     req += methodStr + " " + url + " RTSP/1.0\r\n";
-    req += "CSeq: " + QString::number(cseq) + "\r\n";
-    req += "User-Agent: QtRtspClient\r\n";
 
     // DESCRIBE
     if (method == DESCRIBE)
@@ -43,20 +42,26 @@ QByteArray RtspRequest::toByteArray() const
     // SETUP
     if (method == SETUP)
     {
-        req += QString(
-            "Transport: RTP/AVP;unicast;"
-            "client_port=%1-%2\r\n")
-            .arg(clientRtpPort)
-            .arg(clientRtcpPort);
+        // tcp
+        req += "Transport: RTP/AVP/TCP;unicast;interleaved=0-1\r\n";
     }
 
+    req += "CSeq: " + QString::number(cseq) + "\r\n";
+    req += "User-Agent: QtRtspClient\r\n";
     // PLAY / TEARDOWN
-    if (method == PLAY || method == TEARDOWN)
+    if (method == PLAY)
     {
+        req += "Range: npt=0.000-\r\n";
+
         if (!sessionId.isEmpty())
         {
             req += "Session: " + sessionId + "\r\n";
         }
+        else 
+        {
+            qDebug() << "sessionId is null";
+        }
+            
     }
 
     req += "\r\n";

@@ -3,6 +3,7 @@
 
 #include <QUrl>
 #include <QDebug>
+#include <QTimer>
 
 // ===================== 构造 =====================
 RtspClient::RtspClient(QObject *parent)
@@ -53,20 +54,54 @@ void RtspClient::onReadyRead()
 {
     buffer += socket->readAll();
 
-    if (!buffer.contains("\r\n\r\n"))
-        return;
-
-    RtspResponse resp;
-    if (!resp.parse(buffer))
+    while (true)
     {
-        emit errorOccurred("RTSP parse failed");
+        if (buffer.isEmpty())
+            break;
+
+        // ================= RTP over TCP =================
+        if ((unsigned char)buffer[0] == '$')
+        {
+            if (!processRtpInterleaved(buffer))
+                break;
+            continue;
+        }
+
+        // ================= RTSP Response =================
+        if (!buffer.contains("\r\n\r\n"))
+            break;
+
+        RtspResponse resp;
+        if (!resp.parse(buffer))
+        {
+            emit errorOccurred("RTSP parse failed");
+            buffer.clear();
+            return;
+        }
+
         buffer.clear();
-        return;
+        handleResponse(resp);
     }
+}
 
-    buffer.clear();
+bool RtspClient::processRtpInterleaved(const QByteArray &data)
+{
+    if (data.size() < 4)
+        return false;
 
-    handleResponse(resp);
+    // $ | channel | len (2 bytes)
+    quint16 len = (quint8)data[2] << 8 | (quint8)data[3];
+
+    if (data.size() < len + 4)
+        return false;
+
+    QByteArray rtp = data.mid(4, len);
+
+    buffer.remove(0, len + 4);
+
+    rtpReceiver.onRtpPacket(rtp);
+
+    return true;
 }
 
 // ===================== 发送请求 =====================
@@ -123,11 +158,29 @@ void RtspClient::sendSetup(MediaTrack *track)
     req.setClientPorts(track->clientRtpPort,
                         track->clientRtcpPort);
 
-    qDebug() << ">>> SETUP:" << setupUrl;
+    // qDebug() << ">>> SETUP:" << setupUrl;
 
     sendRequest(req);
 
     state = State::SetupSent;
+}
+
+// ===================== PLAY =====================
+void RtspClient::sendPlay(QString session)
+{
+    RtspRequest req;
+    req.setMethod(RtspRequest::PLAY);
+    req.setUrl(url);
+    req.setCSeq(cseq++);
+    QString id = session;
+    if (session.contains(';'))
+    {
+
+        id = session.section(';', 0, 0);
+    }
+    req.setSessionId(id);
+    // req.addHeader("Range: npt=0.000-");
+    sendRequest(req);
 }
 
 // ===================== Response分发 =====================
@@ -207,10 +260,11 @@ void RtspClient::onSetupResponse(const RtspResponse &resp)
         return;
     }
 
-    qDebug() << "<<< SETUP OK";
+    qDebug().noquote() << "<<< SETUP OK:\n" << resp.body();
 
     state = State::Ready;
-    emit rtspReady();
+    rtpReceiver.start(mediaSession);
+    sendPlay(resp.header("Session"));
 
     qDebug() << "RTSP Ready (control plane finished)";
 }

@@ -29,7 +29,13 @@ MediaSession SDPParser::parse(const QString &sdp)
         else if (line.startsWith("a=control:"))
         {
             track.control = line.section(':',1);
-        }
+            // QString control = line.section(':',1);
+            // if (!control.startsWith("streamid")) {
+            //     track.control = "streamid=" + control.section('=',1);
+            // } else {
+            //     track.control = control;
+            // }
+        } 
     }
 
     session.tracks.append(track);

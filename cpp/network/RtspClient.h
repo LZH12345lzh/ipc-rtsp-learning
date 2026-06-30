@@ -8,6 +8,7 @@
 #include "RtspRequest.h"
 #include "RtspResponse.h"
 #include "MediaSession.h"
+#include "RtpReceiver.h"
 
 class RtspClient : public QObject
 {
@@ -19,7 +20,6 @@ public:
     void start(const QString &url);
 
 signals:
-    void rtspReady();
     void errorOccurred(const QString &err);
 
 private slots:
@@ -52,6 +52,8 @@ private:
     // ===== 媒体会话 =====
     MediaSession mediaSession;
 
+    RtpReceiver rtpReceiver;
+
 private:
     // ===== 请求发送 =====
     void sendRequest(const RtspRequest &req);
@@ -59,6 +61,7 @@ private:
     void sendOptions();
     void sendDescribe();
     void sendSetup(MediaTrack *track);
+    void sendPlay(QString session);
 
     // ===== 响应处理 =====
     void handleResponse(const RtspResponse &resp);
@@ -66,4 +69,6 @@ private:
     void onOptionsResponse(const RtspResponse &resp);
     void onDescribeResponse(const RtspResponse &resp);
     void onSetupResponse(const RtspResponse &resp);
+
+    bool processRtpInterleaved(const QByteArray &data);
 };
